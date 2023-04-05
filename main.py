@@ -94,7 +94,7 @@ def main(filepath_: str, verbose_: bool = False):
     """
 
     # read the csv file
-    sep = ","
+    sep = ";"
     with open(filepath_) as f:
         lines = [line.rstrip() for line in f]
     size = len(lines[0].split(sep)) - 1
@@ -110,12 +110,25 @@ def main(filepath_: str, verbose_: bool = False):
     # read <size_> rows, each containing a mentee's choices
     for index, row in enumerate(lines[1:size + 1]):
         mentees.append(row.split(sep)[0])
-        mentees_choices[index] = [int(c) for c in row.split(sep)[1:]]
+        this_mentee_choices = [int(c) for c in row.split(sep)[1:]]
+        # do some consistency checks
+        filtered_choices = [c for c in this_mentee_choices if c not in [0, -1]]
+        if len(set(filtered_choices)) < len(filtered_choices):
+            print(f"Mentee {mentees[-1]} choices are inconsistent:\n\t{filtered_choices}.")
+            exit(1)
+        mentees_choices[index] = this_mentee_choices
     # skip one line, which is considered to be empty
     # read <size_> rows, each containing the mentors' choices for one mentee
     for mentee_index, row in enumerate(lines[size + 2:]):
         for mentor_index, choice in enumerate([int(c) for c in row.split(sep)[1:]]):
             mentors_choices[mentor_index][mentee_index] = choice
+    
+    # do some consistency checks
+    for mentor_index, mentor_choices in enumerate(mentors_choices):
+        filtered_choices = [c for c in mentor_choices if c not in [0, -1]]
+        if len(set(filtered_choices)) < len(filtered_choices):
+            print(f"Mentor {mentors[mentor_index]} choices are inconsistent:\n\t{filtered_choices}.")
+            exit(1)
 
     # compute an ordered list of people, depending on the choices that were made
     mentees_preferences = [create_preference_list(choices) for choices in mentees_choices]
