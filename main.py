@@ -1,4 +1,5 @@
 from typing import *
+import math
 
 
 def create_preference_list(choices_: List[int]) -> List[int]:
@@ -62,15 +63,22 @@ def gale_shapley(men_preferences_: List[List[int]],
 
 def rank_to_score(rank_: int, size_: int) -> int:
     """ Transform a ranking into a score. """
-    if rank_ > 0:
-        return size_ - rank_
-    else:
-        return rank_
+    return size_ - rank_ if rank_ > 0 else rank_
 
 
 def score_function(rank1_: int, rank2_: int, size_: int) -> int:
     """ Compute a score, based on mutual ranking of both parties. """
     return rank_to_score(rank1_, size_) + rank_to_score(rank2_, size_)
+
+
+def choice_to_exp_score(choice_: int, size_: int) -> float:
+    """ Compute a score, based on a choice (-1, 0, 1, 2, 3, 4, 5). """
+    if choice_ < 0:  # allows to use -2, -3, ... for high severity
+        return choice_*choice_to_exp_score(1, size_)  # use the maximum score as a reference
+    elif choice_ == 0:
+        return 0
+    else:
+        return math.exp((size_-choice_)/size_)
 
 
 def main(filepath_: str, verbose_: bool = False):
@@ -92,6 +100,7 @@ def main(filepath_: str, verbose_: bool = False):
             - this algorithm does not give sufficient leverage to prevent undesired matches (-1)
               from being made, check the output to see if this has occured.
     """
+    print("\n\t\t==== LET'S GO ====")     
 
     # read the csv file
     sep = ";"
@@ -100,9 +109,6 @@ def main(filepath_: str, verbose_: bool = False):
     size = len(lines[0].split(sep)) - 1
     mentees_choices = [[0 for i in range(size)] for j in range(size)]
     mentors_choices = [[0 for i in range(size)] for j in range(size)]
-    if verbose_:
-        for line in lines:
-            print("\t".join(line.split(sep)))
     
     # read the first row, which contains the mentors names
     mentors = lines[0].split(sep)[1:]
@@ -140,6 +146,7 @@ def main(filepath_: str, verbose_: bool = False):
 
     # display the results and compute the overall score
     total_score = 0
+    print("\nPairing")
     for mentor_index, mentee_index in enumerate(mentors_pairs):
         mentee_ranks_mentor = mentees_choices[mentee_index][mentor_index]
         mentor_ranks_mentee = mentors_choices[mentor_index][mentee_index]
@@ -149,6 +156,25 @@ def main(filepath_: str, verbose_: bool = False):
         total_score += pair_score
     print(f"Total matching score\t: {total_score}")
 
+    # if interested, compute a "popularity" score for mentors and mentees
+    if verbose_:
+        print("\nMentors score")
+        mentors_scores = {name: 0 for name in mentors}
+        for mentee_choices in mentees_choices:
+            for mentor_index, choice in enumerate(mentee_choices):
+                mentors_scores[mentors[mentor_index]] += choice_to_exp_score(choice, size)
+        for name in sorted(mentors_scores, key=mentors_scores.get, reverse=True):
+            print(f"{name}:\t {mentors_scores[name]:.2f}")
+        print("\nMentees score")
+        mentees_scores = {name: 0 for name in mentees}
+        for mentor_choices in mentors_choices:
+            for mentee_index, choice in enumerate(mentor_choices):
+                mentees_scores[mentees[mentee_index]] += choice_to_exp_score(choice, size)
+        for name in sorted(mentees_scores, key=mentees_scores.get, reverse=True):
+            print(f"{name}:\t {mentees_scores[name]:.2f}")
+
+    print("\n\t\t==== JOB DONE ====")     
+
 
 if __name__ == '__main__':
-    main("bfb_matrix.csv", False)
+    main("bfb_matrix.csv", True)
