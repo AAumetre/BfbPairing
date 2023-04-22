@@ -4,7 +4,9 @@ import math
 
 def create_preference_list(choices_: List[int]) -> List[int]:
     """ Orders choices, based on a 1-n rank, a 0 for unranked elements and -1 for undesired elements.
-        example: [0,1,0,2,3,-1] -> [1,3,4,0,2,5]"""
+        example: [0,1,0,2,3,-1] -> [1,3,4,0,2,5]
+        WARNING: this is actually an issue as, it will artificially rank people who are all at 0,
+        in a consistent way (top of the list is better ranked). """
     preferences = []
     default_choices = [i for i, v in enumerate(choices_) if v == 0]
     unwanted_choices = [i for i, v in enumerate(choices_) if v == -1]
@@ -67,7 +69,7 @@ def rank_to_score(rank_: int, size_: int) -> int:
 
 
 def score_function(rank1_: int, rank2_: int, size_: int) -> int:
-    """ Compute a score, based on mutual ranking of both parties. """
+    """ Compute a score, based on mutual ranking of both parties. Symmetrical. """
     return rank_to_score(rank1_, size_) + rank_to_score(rank2_, size_)
 
 
@@ -81,7 +83,46 @@ def choice_to_exp_score(choice_: int, size_: int) -> float:
         return math.exp((size_-choice_)/size_)
 
 
-def main(filepath_: str, verbose_: bool = False):
+def disp_pairing_result(pairs_: List[Tuple[str, str]], mentees_dict_choices_: Dict, mentors_dict_choices_: Dict, size_: int) -> int:
+    """ Compute the score of each pair, displays it and returns the total pairing score. """
+    total_score = 0
+    for mentee, mentor in pairs_:
+        mentee_choice, mentor_choice = mentees_dict_choices_[mentee][mentor], mentors_dict_choices_[mentor][mentee]
+        pair_score = score_function(mentee_choice, mentor_choice, size_)
+        print(f"{mentee}({mentee_choice}) - {mentor}({mentor_choice})\t: {pair_score}")
+        total_score += pair_score
+    print(f"Total matching score\t: {total_score}")
+    return total_score
+
+
+def rate_input_pairing(pairs_file_: str, mentees_dict_choices_: Dict, mentors_dict_choices_: Dict,
+                       pairing_score_: int, size_: int) -> None:
+    """ Reads and checks a submitted pairing file. If valid, the pairs are scored and the total score is
+        compared to the computed score.
+        The format of the input file is "mentee name - mentor name" on each line.
+        Mind the " - " in the middle, with one blankspace on each side. """
+    with open(pairs_file_) as f:
+        input_pairs = [tuple(line.rstrip().split(" - ")) for line in f]
+    # perform some checks on the integrity of the pairs
+    input_mentees, input_mentors = [pair[0] for pair in input_pairs], [pair[1] for pair in input_pairs]
+    for mentee in input_mentees:  # each submitted mentee must be known
+        if mentee not in mentees_dict_choices_:
+            print(f"Unknown mentee: \"{mentee}\"")
+            exit(1)
+    for mentor in input_mentors:  # each submitted mentor must be known
+        if mentor not in mentors_dict_choices_:
+            print(f"Unknown mentor: \"{mentor}\"")
+            exit(1)
+    if len(set(input_mentees)) != len(set(input_mentors)) or len(set(input_mentees)) != len(mentees_dict_choices_):
+        print(f"You have submitted a different number of unique mentees and mentors")
+        exit(1)
+    print("\nSubmitted pairing:")
+    submitted_pairing_score = disp_pairing_result(input_pairs, mentees_dict_choices_, mentors_dict_choices_, size_)
+    if submitted_pairing_score > pairing_score_:
+        print("You have submitted a better pairing than I could compute.")
+
+
+def main(filepath_: str, export_pairs_: bool, pairs_file_: str, display_individual_scores_: bool, verbose_: bool = False):
     """ Solve the stable-matching problem https://www.cs.cmu.edu/~arielpro/15896s16/slides/896s16-16.pdf
         The use-case is pairing mentees and mentors, based on:
             - partial ordering on both sides (only from 1 to 5),
@@ -103,7 +144,7 @@ def main(filepath_: str, verbose_: bool = False):
     print("\n\t\t==== LET'S GO ====")     
 
     # read the csv file
-    sep = ";"
+    sep = ","
     with open(filepath_) as f:
         lines = [line.rstrip() for line in f]
     size = len(lines[0].split(sep)) - 1
@@ -137,27 +178,30 @@ def main(filepath_: str, verbose_: bool = False):
             exit(1)
 
     # compute an ordered list of people, depending on the choices that were made
+    mentees_dict_choices = {mentee: {mentor: mentees_choices[mentee_idx][mentor_idx] for mentor_idx, mentor in enumerate(mentors)} for mentee_idx, mentee in enumerate(mentees)}
+    mentors_dict_choices = {mentor: {mentee: mentors_choices[mentor_idx][mentee_idx] for mentee_idx, mentee in enumerate(mentees)} for mentor_idx, mentor in enumerate(mentors)}
     mentees_preferences = [create_preference_list(choices) for choices in mentees_choices]
     mentors_preferences = [create_preference_list(choices) for choices in mentors_choices]
 
     # use the Gale-Shapley algorithm to do the pairing
     # mentees are considered as "men" in this algorithm - they get better results than mentors in their matches
     mentors_pairs = gale_shapley(mentees_preferences, mentors_preferences, size, verbose_)
+    # transform the pairs to a "mentee - mentor" format
+    pairs = [(mentees[mentee_index], mentors[mentor_index]) for mentor_index, mentee_index in enumerate(mentors_pairs)]
 
     # display the results and compute the overall score
-    total_score = 0
-    print("\nPairing")
-    for mentor_index, mentee_index in enumerate(mentors_pairs):
-        mentee_ranks_mentor = mentees_choices[mentee_index][mentor_index]
-        mentor_ranks_mentee = mentors_choices[mentor_index][mentee_index]
-        pair_score = score_function(mentee_ranks_mentor, mentor_ranks_mentee, size)
-        print(f"{mentees[mentee_index]}({mentee_ranks_mentor})\t- "\
-              f"{mentors[mentor_index]}({mentor_ranks_mentee})\t: {pair_score}")
-        total_score += pair_score
-    print(f"Total matching score\t: {total_score}")
+    print("\nComputed pairing:")
+    pairing_score = disp_pairing_result(pairs, mentees_dict_choices, mentors_dict_choices, size)
 
-    # if interested, compute a "popularity" score for mentors and mentees
-    if verbose_:
+    # export the computed pairs to a file, mainly for modification and re-submission
+    if export_pairs_:
+        with open("output_pairs.txt", "w") as f:
+            for mentee, mentor in pairs:
+                f.write(f"{mentee} - {mentor}\n")
+            f.write(f"Total score: {pairing_score}")
+
+    # compute a "popularity" score for mentors and mentees
+    if display_individual_scores_:
         print("\nMentors score")
         mentors_scores = {name: 0 for name in mentors}
         for mentee_choices in mentees_choices:
@@ -173,8 +217,16 @@ def main(filepath_: str, verbose_: bool = False):
         for name in sorted(mentees_scores, key=mentees_scores.get, reverse=True):
             print(f"{name}:\t {mentees_scores[name]:.2f}")
 
+    if pairs_file_ != "":
+        rate_input_pairing(pairs_file_, mentees_dict_choices, mentors_dict_choices, pairing_score, size)
+
     print("\n\t\t==== JOB DONE ====")     
 
 
 if __name__ == '__main__':
-    main("bfb_matrix.csv", True)
+    input_csv_file = "bfb_matrix.csv"
+    export_pairs = True
+    input_pairs_file = "intput_pairs.txt"
+    display_individual_scores = False
+    verbose_mode = False
+    main(input_csv_file, export_pairs, input_pairs_file, display_individual_scores, verbose_mode)
