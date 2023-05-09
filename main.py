@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import *
 import math
 
@@ -122,7 +123,7 @@ def rate_input_pairing(pairs_file_: str, mentees_dict_choices_: Dict, mentors_di
         print("You have submitted a better pairing than I could compute.")
 
 
-def main(filepath_: str, export_pairs_: bool, pairs_file_: str, display_individual_scores_: bool, verbose_: bool = False):
+def main(csv_file_: str, csv_sep_: str, export_pairs_: bool, input_pairs_file_: str, display_individual_scores_: bool, verbose_: bool = False):
     """ Solve the stable-matching problem https://www.cs.cmu.edu/~arielpro/15896s16/slides/896s16-16.pdf
         The use-case is pairing mentees and mentors, based on:
             - partial ordering on both sides (only from 1 to 5),
@@ -144,42 +145,45 @@ def main(filepath_: str, export_pairs_: bool, pairs_file_: str, display_individu
     print("\n\t\t==== LET'S GO ====")     
 
     # read the csv file
-    sep = ","
-    with open(filepath_) as f:
+    with open(csv_file_) as f:
         lines = [line.rstrip() for line in f]
-    size = len(lines[0].split(sep)) - 1
-    mentees_choices = [[0 for i in range(size)] for j in range(size)]
-    mentors_choices = [[0 for i in range(size)] for j in range(size)]
+    size = len(lines[0].split(csv_sep_)) - 1
+    if verbose_:
+        print(f"There are {size} mentees and mentors, totalling {2*size} people.")
     
     # read the first row, which contains the mentors names
-    mentors = lines[0].split(sep)[1:]
+    mentors = lines[0].split(csv_sep_)[1:]
+    mentors_dict_choices = {mentor_name: {} for mentor_name in lines[0].split(csv_sep_)[1:]}
     mentees = []
+    mentees_dict_choices = defaultdict(dict)
     # read <size_> rows, each containing a mentee's choices
     for index, row in enumerate(lines[1:size + 1]):
-        mentees.append(row.split(sep)[0])
-        this_mentee_choices = [int(c) for c in row.split(sep)[1:]]
+        mentee_name = row.split(csv_sep_)[0]
+        mentees.append(mentee_name)
+        this_mentee_choices = [int(c) for c in row.split(csv_sep_)[1:]]
         # do some consistency checks
         filtered_choices = [c for c in this_mentee_choices if c not in [0, -1]]
         if len(set(filtered_choices)) < len(filtered_choices):
-            print(f"Mentee {mentees[-1]} choices are inconsistent:\n\t{filtered_choices}.")
+            print(f"Mentee {mentee_name} choices are inconsistent:\n\t{filtered_choices}.")
             exit(1)
-        mentees_choices[index] = this_mentee_choices
+        for mentor_idx, mentor_choice in enumerate(this_mentee_choices):
+            mentees_dict_choices[mentee_name][mentors[mentor_idx]] = mentor_choice
     # skip one line, which is considered to be empty
     # read <size_> rows, each containing the mentors' choices for one mentee
     for mentee_index, row in enumerate(lines[size + 2:]):
-        for mentor_index, choice in enumerate([int(c) for c in row.split(sep)[1:]]):
-            mentors_choices[mentor_index][mentee_index] = choice
+        for mentor_index, choice in enumerate([int(c) for c in row.split(csv_sep_)[1:]]):
+            mentors_dict_choices[mentors[mentor_index]][mentees[mentee_index]] = choice
     
     # do some consistency checks
-    for mentor_index, mentor_choices in enumerate(mentors_choices):
+    for mentor_choices in [[c for c in mentors_dict_choices[mentor].values()] for mentor in mentors_dict_choices]:
         filtered_choices = [c for c in mentor_choices if c not in [0, -1]]
         if len(set(filtered_choices)) < len(filtered_choices):
             print(f"Mentor {mentors[mentor_index]} choices are inconsistent:\n\t{filtered_choices}.")
             exit(1)
 
     # compute an ordered list of people, depending on the choices that were made
-    mentees_dict_choices = {mentee: {mentor: mentees_choices[mentee_idx][mentor_idx] for mentor_idx, mentor in enumerate(mentors)} for mentee_idx, mentee in enumerate(mentees)}
-    mentors_dict_choices = {mentor: {mentee: mentors_choices[mentor_idx][mentee_idx] for mentee_idx, mentee in enumerate(mentees)} for mentor_idx, mentor in enumerate(mentors)}
+    mentees_choices = [[mentees_dict_choices[mentee][mentor] for mentor in mentors_dict_choices] for mentee in mentees_dict_choices]
+    mentors_choices = [[mentors_dict_choices[mentor][mentee] for mentee in mentees_dict_choices] for mentor in mentors_dict_choices]
     mentees_preferences = [create_preference_list(choices) for choices in mentees_choices]
     mentors_preferences = [create_preference_list(choices) for choices in mentors_choices]
 
@@ -217,16 +221,14 @@ def main(filepath_: str, export_pairs_: bool, pairs_file_: str, display_individu
         for name in sorted(mentees_scores, key=mentees_scores.get, reverse=True):
             print(f"{name}:\t {mentees_scores[name]:.2f}")
 
-    if pairs_file_ != "":
-        rate_input_pairing(pairs_file_, mentees_dict_choices, mentors_dict_choices, pairing_score, size)
+    if input_pairs_file_ != "":
+        rate_input_pairing(input_pairs_file_, mentees_dict_choices, mentors_dict_choices, pairing_score, size)
 
     print("\n\t\t==== JOB DONE ====")     
 
 
 if __name__ == '__main__':
-    input_csv_file = "bfb_matrix.csv"
-    export_pairs = True
-    input_pairs_file = "intput_pairs.txt"
-    display_individual_scores = False
-    verbose_mode = False
-    main(input_csv_file, export_pairs, input_pairs_file, display_individual_scores, verbose_mode)
+    main(csv_file_ = "bfb_matrix.csv", csv_sep_ = ",",
+         export_pairs_ = False, input_pairs_file_ = "intput_pairs.txt",
+         display_individual_scores_ = True,
+         verbose_ = False)
