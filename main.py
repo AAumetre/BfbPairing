@@ -103,13 +103,19 @@ def disp_pairing_result(pairs_: List[Tuple[str, str]], mentees_dict_choices_: Di
 
 
 def rate_input_pairing(pairs_file_: str, mentees_dict_choices_: Dict, mentors_dict_choices_: Dict,
-                       pairing_score_: int, size_: int, verbose_: bool) -> None:
+                       pairing_score_: int, size_: int) -> None:
     """ Reads and checks a submitted pairing file. If valid, the pairs are scored and the total score is
         compared to the computed score.
         The format of the input file is "mentee name - mentor name" on each line.
         Mind the " - " in the middle, with one blankspace on each side. """
-    with open(pairs_file_) as f:
-        input_pairs = [tuple(line.rstrip().split(" - ")) for line in f]
+    try:
+        with open(pairs_file_) as f:
+            input_pairs = [tuple(line.rstrip().split(" - ")) for line in f]
+    except FileNotFoundError:
+        print(f"WARNING: cannot read file: \"{pairs_file_}\"")
+        return
+    # trim the file to the problem size
+    input_pairs = input_pairs[:size_]
     # perform some checks on the integrity of the pairs
     input_mentees, input_mentors = [pair[0] for pair in input_pairs], [pair[1] for pair in input_pairs]
     for mentee in input_mentees:  # each submitted mentee must be known
@@ -124,7 +130,7 @@ def rate_input_pairing(pairs_file_: str, mentees_dict_choices_: Dict, mentors_di
         print(f"You have submitted a different number of unique mentees and mentors")
         exit(1)
     print("\nSubmitted pairing:")
-    submitted_pairing_score = disp_pairing_result(input_pairs, mentees_dict_choices_, mentors_dict_choices_, size_, verbose_)
+    submitted_pairing_score = disp_pairing_result(input_pairs, mentees_dict_choices_, mentors_dict_choices_, size_, True)
     if submitted_pairing_score > pairing_score_:
         print("You have submitted a better pairing than I could compute.")
 
@@ -156,9 +162,20 @@ def shuffle_dict(dict_: Dict) -> Dict:
     return dict(list_items)
 
 
+def read_bfb_csv(filename_: str, sep_: str) -> Tuple[int, List[str]]:
+    """ Read a .csv file formatted for BfB and returns the lines and the problem size. """
+    try:
+        with open(filename_) as f:
+            lines = [line.rstrip() for line in f]
+    except FileNotFoundError:
+        print(f"ERROR: cannot read file: \"{filename_}\", aborting...")
+        exit(1)
+    size = len(lines[0].split(sep_)) - 1
+    return size, lines
+
+
 def main(csv_file_: str, csv_sep_: str, iterations_: int,
-         export_pairs_: bool, input_pairs_file_: str, display_individual_scores_: bool,
-         verbose_: bool = False):
+         export_pairs_: bool, input_pairs_file_: str, display_individual_scores_: bool):
     """ Solve the stable-matching problem https://www.cs.cmu.edu/~arielpro/15896s16/slides/896s16-16.pdf
         The use-case is pairing mentees and mentors, based on:
             - partial ordering on both sides (only from 1 to 5),
@@ -180,14 +197,22 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
     print("\n\t\t==== LET'S GO ====")
 
     # read the csv file
-    with open(csv_file_) as f:
-        lines = [line.rstrip() for line in f]
-    size = len(lines[0].split(csv_sep_)) - 1
-    if verbose_:
-        print(f"There are {size} mentees and mentors, totalling {2*size} people.")
+    size, lines = read_bfb_csv(csv_file_, csv_sep_)
+    if size == 0:
+        print(f"WARNING: the problem size is 0: there probably was an issue when reading the file.\n" +
+              f"Check the definition of the CSV separator, it is currently set to '{csv_sep_}'.\n" +
+              "Trying to use another separator...")
+        # try using ; if , was used, and conversely
+        csv_sep_ = {",", ";"}.difference({csv_sep_}).pop()
+        size, lines = read_bfb_csv(csv_file_, csv_sep_)
+        if size == 0:
+            print(f"ERROR: still could not read data from file \"{csv_file_}\"")
+            exit(1)  
+    print(f"There are {size} mentees and mentors, totalling {2*size} people.\n")
     
     # read the first row, which contains the mentors names
     mentors = lines[0].split(csv_sep_)[1:]
+    # initialize a dictionnary that will contain the mentor's ordered choices
     mentors_dict_choices = {mentor_name: {} for mentor_name in lines[0].split(csv_sep_)[1:]}
     mentees = []
     mentees_dict_choices = defaultdict(dict)
@@ -254,13 +279,16 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
 
     # export the computed pairs to a file, mainly for modification and re-submission
     if export_pairs_:
-        with open("output_pairs.txt", "w") as f:
+        filename = "output_pairs.txt"
+        with open(filename, "w") as f:
             for mentee, mentor in best_pairing[1]:
                 f.write(f"{mentee} - {mentor}\n")
             f.write(f"Total score: {best_pairing[0]}")
+        print(f"The file {filename} containing the computed pairing has been written.")
 
     if input_pairs_file_:
-        rate_input_pairing(input_pairs_file_, mentees_dict_choices, mentors_dict_choices, best_pairing[0], size, True)
+        rate_input_pairing(input_pairs_file_, mentees_dict_choices, mentors_dict_choices,
+                           best_pairing[0], size)
 
     # plt.hist(pairing_scores, bins=20)
     # plt.show()
@@ -270,7 +298,6 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
 if __name__ == '__main__':
     start_time = time.time_ns()
     main(csv_file_ = "bfb_matrix.csv", csv_sep_ = ",", iterations_ = 2000,
-         export_pairs_ = False, input_pairs_file_ = "intput_pairs.txt",
-         display_individual_scores_ = False,
-         verbose_ = False)
+         export_pairs_ = False, input_pairs_file_ = "input_pairs.txt",
+         display_individual_scores_ = False)
     print(f"Elapsed time: {(time.time_ns()-start_time)*1e-6:.2f} ms")
