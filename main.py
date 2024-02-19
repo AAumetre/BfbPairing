@@ -198,7 +198,9 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
 
     # read the csv file
     size, lines = read_bfb_csv(csv_file_, csv_sep_)
-    if size == 0:
+    if size != 0:
+        print(f"There are {size} mentees and mentors, totalling {2*size} people.\n")
+    else:
         print(f"WARNING: the problem size is 0: there probably was an issue when reading the file.\n" +
               f"Check the definition of the CSV separator, it is currently set to '{csv_sep_}'.\n" +
               "Trying to use another separator...")
@@ -207,8 +209,9 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
         size, lines = read_bfb_csv(csv_file_, csv_sep_)
         if size == 0:
             print(f"ERROR: still could not read data from file \"{csv_file_}\"")
-            exit(1)  
-    print(f"There are {size} mentees and mentors, totalling {2*size} people.\n")
+            exit(1)
+        print(f"File succesfully loaded! There are {size} mentees and mentors, totalling {2*size} people.\n")
+
     
     # read the first row, which contains the mentors names
     mentors = lines[0].split(csv_sep_)[1:]
@@ -297,7 +300,17 @@ def main(csv_file_: str, csv_sep_: str, iterations_: int,
 
 if __name__ == '__main__':
     start_time = time.time_ns()
-    main(csv_file_ = "bfb_matrix.csv", csv_sep_ = ",", iterations_ = 2000,
+    """ Use the following call to parametrize the pariring run.
+            * csv_file (str): path to the .csv file containing the input data;
+            * csv_sep (str): separator used in the csv file;
+            * iterations (int): number of iterations to do, in the order of a few thousands,
+                                more iterations gives a higher chance of optimal pairing;
+            * export_pairs (bool): true if you want a text file to be created with the pairing;
+            * input_pairs_file (str): provide a former, or manually corrected pairing so as to be scored
+                                      and compared to the pairing produced by the tool;
+            * display_individual_scores (bool): true if you want statistics on who was best ranked on both sides."""
+    main(csv_file_ = "bfb_matrix.csv", csv_sep_ = ",", iterations_ = 10000,
          export_pairs_ = False, input_pairs_file_ = "input_pairs.txt",
          display_individual_scores_ = False)
+    
     print(f"Elapsed time: {(time.time_ns()-start_time)*1e-6:.2f} ms")
